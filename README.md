@@ -80,8 +80,9 @@ npx playwright install chromium
 scripts/local.sh            # downloads the model once (~650 MB), starts it and Chrome for Testing, opens the inspector
 ```
 
-Measured on an Apple M1 Max under heavy unrelated load (MPS): 0.5-1.9 s per decision; Wikipedia
-"open the article about Gödel's incompleteness theorems" passed in 5 decisions. The model card reports
+Measured on an Apple M1 Max under heavy unrelated load (MPS): 0.5-1.9 s per decision; 8/8 of a slice of
+the model card's suite A passed in one run each (Wikipedia search and article, Hacker News, GitHub issues,
+python.org, books/quotes toscrape, an arXiv search), 2.5-50 s per task including page loads. The model card reports
 54/54 on simple held-out sites and roughly 20-26 % on long multi-step tasks; stopping too early is its main
 failure. `JEV_CDP_TIMEOUT` raises Browser Harness's fixed 5 s CDP timeout on busy machines.
 
