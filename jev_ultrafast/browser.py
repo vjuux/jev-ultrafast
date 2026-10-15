@@ -7,8 +7,15 @@ import sys
 import time
 from pathlib import Path
 
+import browser_harness.helpers as _harness
 from browser_harness.admin import ensure_daemon
 from browser_harness.helpers import cdp
+
+# Browser Harness waits a fixed 5 s per CDP reply; a busy machine needs longer (JEV_CDP_TIMEOUT seconds).
+if os.environ.get("JEV_CDP_TIMEOUT"):
+    _seconds = float(os.environ["JEV_CDP_TIMEOUT"])
+    _harness._send.__defaults__ = (_seconds,)
+    cdp.__defaults__ = (None, _seconds)
 
 # Atomically read visible content and controls, preserving actual DOM node identity.
 # JEV_MACROS=1: calendars and steppers are offered as one "set the date / number" action (see snapshot.js)

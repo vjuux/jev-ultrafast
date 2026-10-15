@@ -67,6 +67,24 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 
 `TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
 
+## Run it locally, no TypeSafe key
+
+This branch swaps TypeSafe's hosted Jev for [laya-browser](https://huggingface.co/cklxx/laya-browser), an
+Apache-2.0 fine-tune of [laya](https://github.com/NandhaKishorM/laya) trained to answer exactly this agent's
+`/v1/systemone` requests (operation + target, one encoder pass). Its harness patch is applied as-is.
+
+```bash
+uv sync
+cp .env.example .env        # fill TEXT_MODEL_* (any OpenAI-compatible model; it only writes field values)
+npx playwright install chromium
+scripts/local.sh            # downloads the model once (~650 MB), starts it and Chrome for Testing, opens the inspector
+```
+
+Measured on an Apple M1 Max under heavy unrelated load (MPS): 0.5-1.9 s per decision; Wikipedia
+"open the article about Gödel's incompleteness theorems" passed in 5 decisions. The model card reports
+54/54 on simple held-out sites and roughly 20-26 % on long multi-step tasks; stopping too early is its main
+failure. `JEV_CDP_TIMEOUT` raises Browser Harness's fixed 5 s CDP timeout on busy machines.
+
 ## Use the library
 
 ```python
