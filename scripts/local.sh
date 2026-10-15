@@ -17,7 +17,7 @@ HEADLESS=()
 
 # 1. The fine-tuned decision model (cklxx/laya-browser, Apache-2.0, ~650 MB) and its server.
 if [ ! -f "$MODEL_DIR/model.safetensors" ]; then
-  uv run --project local hf download cklxx/laya-browser --local-dir "$MODEL_DIR" --exclude "assets/*" "results/*" "code/*"
+  uv run --project local hf download cklxx/laya-browser --local-dir "$MODEL_DIR" --exclude "assets/*" --exclude "results/*" --exclude "code/*"
 fi
 uv run --project local python "$MODEL_DIR/laya_browser.py" serve --model "$MODEL_DIR" --port "$PORT" &
 SERVER=$!
@@ -36,4 +36,9 @@ until curl -s -o /dev/null "http://127.0.0.1:$PORT/v1/systemone" -d '{}'; do sle
 # 3. Jev against the local server. Browser Harness telemetry stays off.
 export TYPESAFE_BASE_URL="http://127.0.0.1:$PORT" TYPESAFE_API_KEY="${TYPESAFE_API_KEY:-local}"
 export BU_CDP_URL="http://127.0.0.1:$CDP_PORT" BH_TELEMETRY=0 JEV_CDP_TIMEOUT="${JEV_CDP_TIMEOUT:-30}"
+# The inspector's usual port (8766) may already be taken; use the first free one from there.
+for p in $(seq "${TYPESAFE_DEMO_PORT:-8766}" 8799); do
+  lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1 || { export TYPESAFE_DEMO_PORT=$p; break; }
+done
+echo "Inspector: http://127.0.0.1:$TYPESAFE_DEMO_PORT"
 uv run --env-file .env jev
