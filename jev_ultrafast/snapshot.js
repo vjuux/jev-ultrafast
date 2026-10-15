@@ -52,12 +52,58 @@
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
   };
+  // Widgets whose raw controls need counting (a calendar's month arrows, a stepper's +/-) are offered as ONE fill
+  // action ("set the date" / "set the number") instead of the arrows; the executor clicks until the value is reached.
+  const MONTH_TITLE=/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/;
+  const bname=b=>(b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim();
+  const NEXT=/^(next( month)?|›|»|>|→)$/i, PREV=/^(prev(ious)?( month)?|‹|«|<|←)$/i;
+  const INC=/^(increase|increment|add|plus|more)\b|^\+$/i, DEC=/^(decrease|decrement|remove|minus|fewer|less)\b|^[−–-]$/i;
+  const clickable='button,[role="button"],a';
+  const macros=[], hidden=new Set();
+  for (const b of __JEV_MACROS__ ? document.querySelectorAll(clickable) : []) {
+    if (!visible(b) || !NEXT.test(bname(b))) continue;
+    let box=b.parentElement;
+    while (box && box!==document.body && !(MONTH_TITLE.test(box.innerText||'') &&
+        box.querySelectorAll('button,[role="gridcell"],td a').length>=28)) box=box.parentElement;
+    if (!box || box===document.body || macros.some(m=>m.box===box)) continue;
+    hidden.add(b);
+    for (const p of box.querySelectorAll(clickable)) if (PREV.test(bname(p))) hidden.add(p);
+    const owner=box.closest('[role="dialog"]')?.getAttribute('aria-label') || box.getAttribute('aria-label') || 'Calendar';
+    macros.push({box,macro:'date',label:owner+': set the date',value:(box.innerText.match(MONTH_TITLE)||[''])[0]});
+  }
+  for (const inc of __JEV_MACROS__ ? document.querySelectorAll(clickable) : []) {
+    if (!visible(inc) || !INC.test(bname(inc))) continue;
+    const box=inc.parentElement, dec=box && [...box.querySelectorAll(clickable)].find(x=>DEC.test(bname(x)));
+    const num=dec && (box.innerText||'').replace(/[+−–-]/g,' ').match(/\b\d{1,3}\b/);
+    if (!num || macros.some(m=>m.box===box)) continue;
+    hidden.add(inc); hidden.add(dec);
+    const noun=(box.innerText||'').replace(/[+−–-]|\b\d{1,3}\b/g,' ').replace(/\s+/g,' ').trim() ||
+      bname(inc).replace(INC,'').trim() || 'Count';
+    macros.push({box,macro:'count',label:noun+': set the number',value:num[0]});
+  }
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
+    if (hidden.has(e)) continue;
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
-    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    // an option scrolled out of view INSIDE an open list (a long time / country list) is offered too: the executor
+    // scrolls it into view before clicking, so the policy never has to scroll a list it cannot see
+    const inList=['option','menuitem','menuitemradio'].includes(rname) && (()=>{
+      for (let p=e.parentElement; p && p!==document.body; p=p.parentElement) {
+        const o=getComputedStyle(p).overflowY;
+        if ((o==='auto'||o==='scroll') && p.scrollHeight>p.clientHeight+2) {
+          const q=p.getBoundingClientRect(); return q.bottom>0 && q.top<innerHeight && visible(p);
+        }
+      }
+      return false;
+    })();
+    const inView=x>=0 && y>=0 && x<innerWidth && y<innerHeight;
+    if (!rname || r.width<=0 || r.height<=0 || (!inView && !inList)) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
+    // Covered by an unrelated element (a modal, an open search overlay, a sticky banner): it cannot be clicked, so it
+    // is not offered.  Covered by its own ancestor or descendant is fine (browser.py clicks through an ancestor).
+    const hit=inView ? document.elementFromPoint(x,y) : null;
+    if (hit && hit!==e && !e.contains(hit) && !hit.contains(e) && !(e.labels && [...e.labels].some(l=>l.contains(hit)))) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
     for (const key of ['checked','selected','expanded']) {
@@ -75,9 +121,20 @@
           (rname==='combobox' && ['INPUT','TEXTAREA'].includes(e.tagName)));
       const value='value' in e ? String(e.value) :
         e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
-      actions.push({...base,kind:editable?'fill':'click',value});
+      // format hints for the text helper (a date field that only accepts MM/DD/YYYY, a phone pattern, ...)
+      const hints=editable ? Object.fromEntries([['placeholder',e.getAttribute('placeholder')],['input_type',e.type],
+        ['pattern',e.getAttribute('pattern')],['maxlength',e.getAttribute('maxlength')],
+        ['format_hint',(e.getAttribute('aria-describedby')||'').split(/\s+/).map(id=>document.getElementById(id)?.innerText||'').join(' ').trim()]]
+        .filter(([k,v])=>v && !(k==='input_type' && v==='text'))) : {};
+      actions.push({...base,kind:editable?'fill':'click',value,...hints});
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
+  }
+  for (const m of macros) {
+    const r=m.box.getBoundingClientRect();
+    if (!visible(m.box) || r.width<=0 || r.height<=0 || r.bottom<0 || r.top>=innerHeight) continue;
+    actions.push({node:identity(m.box),role:'textbox',label:m.label,kind:'fill',macro:m.macro,value:m.value,
+      rect:{x:r.x,y:r.y,w:r.width,h:r.height}});
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;
@@ -101,6 +158,10 @@
   actions.forEach((a,i)=>a.id='e'+(i+1));
   if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
   if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
+  const ae=document.activeElement;
+  if (ae && (ae.tagName==='TEXTAREA' || (ae.tagName==='INPUT' && ['text','search','url','email','tel','number'].includes(ae.type)))
+      && safe(ae) && visible(ae) && (ae.value||'').trim())
+    actions.push({id:'press_enter',kind:'key',label:'Press Enter in the focused text field (submit it)',key:'Enter'});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
     scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
