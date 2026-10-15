@@ -21,11 +21,12 @@ if [ ! -f "$MODEL_DIR/model.safetensors" ]; then
 fi
 uv run --project local python "$MODEL_DIR/laya_browser.py" serve --model "$MODEL_DIR" --port "$PORT" &
 SERVER=$!
+trap 'kill $SERVER 2>/dev/null' EXIT
 
 # 2. Chrome for Testing only, never the branded Chrome app (Playwright's copy: npx playwright install chromium).
 CHROME="${CHROME_FOR_TESTING:-$(ls -d "$HOME"/Library/Caches/ms-playwright/chromium-*/chrome-mac*/"Google Chrome for Testing.app" 2>/dev/null | sort -V | tail -1)/Contents/MacOS/Google Chrome for Testing}"
 [ -x "$CHROME" ] || { echo "Chrome for Testing not found; run: npx playwright install chromium" >&2; kill $SERVER; exit 1; }
-"$CHROME" "${HEADLESS[@]}" --remote-debugging-port="$CDP_PORT" --user-data-dir="$PROFILE" --no-first-run \
+"$CHROME" ${HEADLESS[@]+"${HEADLESS[@]}"} --remote-debugging-port="$CDP_PORT" --user-data-dir="$PROFILE" --no-first-run \
   --no-default-browser-check about:blank >/dev/null 2>&1 &
 CHROME_PID=$!
 trap 'kill $SERVER $CHROME_PID 2>/dev/null' EXIT
