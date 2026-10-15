@@ -89,11 +89,13 @@ class Agent:
         page = self.state["page"]
         excluded = self.state.get("excluded") or set()
         safe = os.environ.get("JEV_SAFE") == "1"
+        # JEV_EXCLUDE: a regex of control labels never offered (e.g. "create app|save|submit" so a supervisor clicks those).
+        held = re.compile(os.environ["JEV_EXCLUDE"], re.I) if os.environ.get("JEV_EXCLUDE") else None
         undo = self._undo_guard()
-        if not excluded and not safe and not undo:
+        if not excluded and not safe and not held and not undo:
             return page
         return {**page, "actions": [a for a in page["actions"] if a["id"] not in excluded and not (safe and UNSAFE.search(a.get("label", "")))
-                                    and not undo(a)]}
+                                    and not (held and held.search(a.get("label", ""))) and not undo(a)]}
 
     def _undo_guard(self, window=3):
         """For a few steps after a click / select that changed the page, do not offer the same control again (or its
